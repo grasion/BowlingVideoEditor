@@ -1,16 +1,26 @@
+# Build output
 bin/
 obj/
-*.user
-*.suo
-.vs/
-*.DotSettings.user
 publish/
 installer_output/
 installer_output2/
-BowlingVideoEditor/bin/
-BowlingVideoEditor/obj/
-BowlingVideoEditor/publish/
-BowlingVideoEditor/installer_output/
-BowlingVideoEditor/installer_output2/
-BowlingVideoEditor/BowlingVideoEditor_v1.0.0/
+
+# IDE
+.vs/
+*.user
+*.suo
+*.DotSettings.user
+
+# Large/temp files
 *.zip
+BowlingVideoEditor/BowlingVideoEditor_v1.0.0/
+
+# Duplicate files in root (originals in Resources/)
+BowlingVideoEditor/coffee_qr.png
+BowlingVideoEditor/icon.ico
+
+# Unused scripts
+BowlingVideoEditor/create_installer.ps1
+BowlingVideoEditor/create_setup.ps1
+BowlingVideoEditor/setup_script.bat
+update_version.bat
