@@ -13,13 +13,11 @@ installer_output2/
 
 # Large/temp files
 *.zip
-BowlingVideoEditor/BowlingVideoEditor_v1.0.0/
 
-# Duplicate files in root (originals in Resources/)
+# Duplicate/unused files
+BowlingVideoEditor/BowlingVideoEditor_v1.0.0/
 BowlingVideoEditor/coffee_qr.png
 BowlingVideoEditor/icon.ico
-
-# Unused scripts
 BowlingVideoEditor/create_installer.ps1
 BowlingVideoEditor/create_setup.ps1
 BowlingVideoEditor/setup_script.bat

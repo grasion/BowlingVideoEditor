@@ -15,10 +15,8 @@ set TAG=v%VERSION%
 
 :: ===== 1) 빌드 =====
 echo [1/4] 빌드 중...
-cd BowlingVideoEditor
-dotnet publish -c Release -o publish
+dotnet publish BowlingVideoEditor\BowlingVideoEditor.csproj -c Release -o BowlingVideoEditor\publish
 if %errorlevel% neq 0 ( echo 빌드 실패! & pause & exit /b 1 )
-cd ..
 echo.
 
 :: ===== 2) Inno Setup으로 Setup.exe 생성 =====
@@ -37,20 +35,14 @@ echo.
 
 :: ===== 3) Git 소스코드만 푸시 =====
 echo [3/4] Git 소스코드 푸시...
-git add .gitignore
-git add BowlingVideoEditor\*.csproj
-git add BowlingVideoEditor\App.xaml
-git add BowlingVideoEditor\App.xaml.cs
+git add .gitignore build_and_publish.bat
+git add BowlingVideoEditor\*.csproj BowlingVideoEditor\App.xaml BowlingVideoEditor\App.xaml.cs
 git add BowlingVideoEditor\Models\*.cs
 git add BowlingVideoEditor\Services\*.cs
-git add BowlingVideoEditor\Views\*.xaml
-git add BowlingVideoEditor\Views\*.xaml.cs
+git add BowlingVideoEditor\Views\*.xaml BowlingVideoEditor\Views\*.xaml.cs
 git add BowlingVideoEditor\Resources\*
 git add BowlingVideoEditor\installer.iss
-git add BowlingVideoEditor\.gitignore
-git add BowlingVideoEditor\LICENSE
-git add BowlingVideoEditor\README.md
-git add build_and_publish.bat
+git add BowlingVideoEditor\.gitignore BowlingVideoEditor\LICENSE BowlingVideoEditor\README.md
 git commit -m "Release %TAG%"
 git tag -a %TAG% -m "Release %TAG%" 2>nul
 git push origin main
@@ -65,10 +57,6 @@ if %errorlevel% equ 0 (
     if exist "BowlingVideoEditor\installer_output\BowlingVideoEditor_Setup_v%VERSION%.exe" (
         set "SETUP_FILE=BowlingVideoEditor\installer_output\BowlingVideoEditor_Setup_v%VERSION%.exe"
     )
-    if exist "BowlingVideoEditor\installer_output2\BowlingVideoEditor_Setup_v%VERSION%.exe" (
-        set "SETUP_FILE=BowlingVideoEditor\installer_output2\BowlingVideoEditor_Setup_v%VERSION%.exe"
-    )
-
     if defined SETUP_FILE (
         gh release delete %TAG% --yes 2>nul
         gh release create %TAG% "!SETUP_FILE!" --title "볼링 영상 편집기 %TAG%" --notes "## 볼링 영상 편집기 %TAG%
