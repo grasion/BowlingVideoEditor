@@ -1,0 +1,16 @@
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.DotSettings.user
+publish/
+installer_output/
+installer_output2/
+BowlingVideoEditor/bin/
+BowlingVideoEditor/obj/
+BowlingVideoEditor/publish/
+BowlingVideoEditor/installer_output/
+BowlingVideoEditor/installer_output2/
+BowlingVideoEditor/BowlingVideoEditor_v1.0.0/
+*.zip
