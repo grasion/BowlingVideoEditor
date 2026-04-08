@@ -1,0 +1,17 @@
+﻿bin/
+obj/
+publish/
+installer_output/
+installer_output2/
+.vs/
+*.user
+*.suo
+*.DotSettings.user
+*.zip
+BowlingVideoEditor/BowlingVideoEditor_v1.0.0/
+BowlingVideoEditor/coffee_qr.png
+BowlingVideoEditor/icon.ico
+BowlingVideoEditor/create_installer.ps1
+BowlingVideoEditor/create_setup.ps1
+BowlingVideoEditor/setup_script.bat
+update_version.bat
