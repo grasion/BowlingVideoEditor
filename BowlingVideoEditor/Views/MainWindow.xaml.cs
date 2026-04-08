@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
+using System.Threading.Tasks;
 using BowlingVideoEditor.Models;
 using BowlingVideoEditor.Services;
 using LibVLCSharp.Shared;
@@ -36,6 +37,8 @@ namespace BowlingVideoEditor.Views
         private string _currentScoreImgPath;
         private int _selectedClipIdx = -1;
         private readonly System.Collections.Generic.List<OverlayItem> _overlays = new();
+        private string _mergedFilePath; // 클립 합쳐진 임시 파일
+        private bool _isMerging; // 합치기 진행 중
 
         // 점수판 드래그
         private bool _logoDragging;
@@ -43,13 +46,14 @@ namespace BowlingVideoEditor.Views
 
         private TextBox[] _t1 = new TextBox[10];
         private TextBox[] _t2 = new TextBox[10];
+        private TextBox[] _t3 = new TextBox[10]; // 10프레임 3투구 (1~9프레임은 비활성)
         private TextBox[] _sc = new TextBox[10];
-        private TextBox[] _tm = new TextBox[10];
+        private TextBox[] _tm = new TextBox[10];  // 1투 시간
+        private TextBox[] _tm2 = new TextBox[10]; // 2투 시간
 
         public MainWindow()
         {
             InitializeComponent();
-            ClipListBox.ItemsSource = _clips;
             _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
             _timer.Tick += Timer_Tick;
             BuildScoreGrid();
@@ -140,14 +144,31 @@ namespace BowlingVideoEditor.Views
             SyncScoreData();
             var score = _currentTimeline?.Score ?? new BowlingScore();
 
-            // 시간대별 표시할 프레임 수
+            // 시간대별 표시할 프레임 수 + 마지막 프레임의 투구 수
             int visibleFrames = 0;
+            int lastFrameThrows = 2; // 기본: 전체 표시
             if (_currentTimeline != null && _currentTimeline.Entries.Count > 0 && _mp.Length > 0)
             {
                 var currentTime = TimeSpan.FromMilliseconds(_mp.Time);
+                // 각 엔트리를 시간순으로 확인
                 foreach (var entry in _currentTimeline.Entries)
+                {
                     if (entry.Timestamp <= currentTime)
-                        visibleFrames = Math.Max(visibleFrames, entry.FrameIndex);
+                    {
+                        if (entry.FrameIndex > visibleFrames)
+                        {
+                            visibleFrames = entry.FrameIndex;
+                            // 이 엔트리가 1투만 있는지 2투까지 있는지
+                            lastFrameThrows = string.IsNullOrEmpty(entry.Throw2) ? 1 : 2;
+                        }
+                        else if (entry.FrameIndex == visibleFrames)
+                        {
+                            // 같은 프레임의 후속 엔트리 (2투)
+                            if (!string.IsNullOrEmpty(entry.Throw2))
+                                lastFrameThrows = 2;
+                        }
+                    }
+                }
             }
             else if (_currentTimeline == null || _currentTimeline.Entries.Count == 0)
                 visibleFrames = 10;
@@ -169,7 +190,7 @@ namespace BowlingVideoEditor.Views
                 score, visibleFrames,
                 _scoreImgW, _scoreImgH, _scoreFontSize, actualLogoX, actualLogoY,
                 _overlays.Count > 0 ? _overlays : null,
-                canvasW, canvasH);
+                canvasW, canvasH, lastFrameThrows);
 
             _currentScoreImgPath = imgPath;
 
@@ -224,13 +245,29 @@ namespace BowlingVideoEditor.Views
             for (int i = 0; i < 10; i++)
             {
                 var a = _t1[i].Text.Trim(); var b = _t2[i].Text.Trim();
-                var c = i == 9 ? F10T3Box.Text.Trim() : "";
-                int.TryParse(_sc[i].Text, out int cs); TimeSpan.TryParse(_tm[i].Text, out var ts);
+                var c = i == 9 ? _t3[9].Text.Trim() : "";
+                int.TryParse(_sc[i].Text, out int cs);
+                TimeSpan.TryParse(_tm[i].Text, out var ts1);
+                TimeSpan.TryParse(_tm2[i].Text, out var ts2);
                 score.Frames[i].Throw1 = a; score.Frames[i].Throw2 = b;
                 score.Frames[i].Throw3 = c; score.Frames[i].Score = cs;
+
+                // 1투구 시간 엔트리
                 if (!string.IsNullOrEmpty(a) || cs > 0)
-                    tl.Entries.Add(new ScoreEntry { Timestamp = ts, FrameIndex = i + 1,
+                    tl.Entries.Add(new ScoreEntry { Timestamp = ts1, FrameIndex = i + 1,
+                        Throw1 = a, Throw2 = "", Throw3 = "", CumulativeScore = 0 });
+
+                // 2투구 시간 엔트리 (스트라이크가 아닌 경우)
+                if (!string.IsNullOrEmpty(b) && a.ToUpper() != "X" && ts2 > TimeSpan.Zero)
+                    tl.Entries.Add(new ScoreEntry { Timestamp = ts2, FrameIndex = i + 1,
                         Throw1 = a, Throw2 = b, Throw3 = c, CumulativeScore = cs });
+                else if (!string.IsNullOrEmpty(a) && cs > 0)
+                {
+                    // 스트라이크이거나 2투시간 미입력 시 1투시간에 전체 표시
+                    var last = tl.Entries.Count > 0 ? tl.Entries[tl.Entries.Count - 1] : null;
+                    if (last != null && last.FrameIndex == i + 1)
+                    { last.Throw2 = b; last.Throw3 = c; last.CumulativeScore = cs; }
+                }
             }
             int.TryParse(TotalScoreText.Text, out int tot);
             score.TotalScore = tot; tl.Score = score;
@@ -238,6 +275,8 @@ namespace BowlingVideoEditor.Views
             if (ScorePosYSlider != null) tl.PositionY = ScorePosYSlider.Value / 100.0;
             tl.ScalePercent = _scoreImgW / 900.0;
             tl.FontSize = _scoreFontSize;
+            tl.ImageWidth = _scoreImgW;
+            tl.ImageHeight = _scoreImgH;
             _currentTimeline = tl;
         }
 
@@ -250,26 +289,15 @@ namespace BowlingVideoEditor.Views
             };
             if (dlg.ShowDialog() != true) return;
 
+            bool isFirst = _clips.Count == 0 && string.IsNullOrEmpty(_currentFilePath);
+
             foreach (var file in dlg.FileNames)
-            {
-                if (_clips.Count == 0 && string.IsNullOrEmpty(_currentFilePath))
-                {
-                    // 첫 영상 - 바로 재생하고 클립으로 추가
-                    _currentFilePath = file;
-                    // FFProbe로 길이 가져오기 (비동기)
-                    AddFileAsClipAsync(file);
-                    PlayFile(file);
-                }
-                else
-                {
-                    // 기존 영상 뒤에 추가
-                    AddFileAsClipAsync(file);
-                }
-            }
+                AddFileAsClipAsync(file, isFirst && file == dlg.FileNames[0]);
+
             StatusText.Text = $"클립 {_clips.Count}개 로드됨";
         }
 
-        private async void AddFileAsClipAsync(string filePath)
+        private async void AddFileAsClipAsync(string filePath, bool playImmediately = false)
         {
             try
             {
@@ -282,11 +310,9 @@ namespace BowlingVideoEditor.Views
                     EndTime = duration,
                     Order = _clips.Count
                 });
-                UpdateTimeline();
             }
             catch
             {
-                // FFProbe 실패 시 기본 길이
                 _clips.Add(new VideoClip
                 {
                     FilePath = filePath,
@@ -294,6 +320,22 @@ namespace BowlingVideoEditor.Views
                     EndTime = TimeSpan.FromMinutes(1),
                     Order = _clips.Count
                 });
+            }
+
+            if (playImmediately && _clips.Count == 1)
+            {
+                // 첫 영상은 바로 재생 (합치기 불필요)
+                _currentFilePath = filePath;
+                PlayFile(filePath);
+                UpdateTimeline();
+            }
+            else if (_clips.Count > 1)
+            {
+                // 여러 클립 → 합쳐서 재생
+                AutoMergeAndPlay();
+            }
+            else
+            {
                 UpdateTimeline();
             }
         }
@@ -362,18 +404,41 @@ namespace BowlingVideoEditor.Views
                 int row = i + 1;
                 var lbl = new TextBlock { Text = (i+1).ToString(),
                     Foreground = new SolidColorBrush(Color.FromRgb(0,122,204)),
-                    FontWeight = FontWeights.Bold, FontSize = 14,
+                    FontWeight = FontWeights.Bold, FontSize = 12,
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center };
                 Grid.SetRow(lbl, row); Grid.SetColumn(lbl, 0); ScoreGrid.Children.Add(lbl);
-                _t1[i] = MkCell(row, 1); _t1[i].LostFocus += ThrowBox_LostFocus; _t1[i].FontSize = 14;
-                _t2[i] = MkCell(row, 2); _t2[i].LostFocus += ThrowBox_LostFocus; _t2[i].FontSize = 14;
-                _sc[i] = MkCell(row, 3); _sc[i].Foreground = new SolidColorBrush(Color.FromRgb(0,204,106));
-                _sc[i].FontWeight = FontWeights.Bold; _sc[i].IsReadOnly = true; _sc[i].FontSize = 15;
-                _tm[i] = MkCell(row, 4); _tm[i].Text = "00:00:00"; _tm[i].FontSize = 11;
-                _tm[i].MaxLength = 8; // hh:mm:ss
+
+                _t1[i] = MkCell(row, 1); _t1[i].LostFocus += ThrowBox_LostFocus; _t1[i].FontSize = 12;
+                _t2[i] = MkCell(row, 2); _t2[i].LostFocus += ThrowBox_LostFocus; _t2[i].FontSize = 12;
+
+                // 3투구: 10프레임만 활성화
+                _t3[i] = MkCell(row, 3); _t3[i].FontSize = 12;
+                _t3[i].LostFocus += ThrowBox_LostFocus;
+                if (i < 9)
+                {
+                    _t3[i].IsEnabled = false;
+                    _t3[i].Background = new SolidColorBrush(Color.FromRgb(40, 40, 40));
+                }
+                else
+                {
+                    _t3[i].IsEnabled = false; // 10프레임도 기본 비활성, 조건 충족 시 활성화
+                }
+
+                _sc[i] = MkCell(row, 4); _sc[i].Foreground = new SolidColorBrush(Color.FromRgb(0,204,106));
+                _sc[i].FontWeight = FontWeights.Bold; _sc[i].IsReadOnly = true; _sc[i].FontSize = 13;
+
+                // 1투 시간
+                _tm[i] = MkCell(row, 5); _tm[i].Text = "00:00:00"; _tm[i].FontSize = 9;
+                _tm[i].MaxLength = 8;
                 _tm[i].LostFocus += TimeBox_LostFocus;
                 _tm[i].Foreground = new SolidColorBrush(Color.FromRgb(170,170,170));
+
+                // 2투 시간 (스트라이크면 비활성)
+                _tm2[i] = MkCell(row, 6); _tm2[i].Text = "00:00:00"; _tm2[i].FontSize = 9;
+                _tm2[i].MaxLength = 8;
+                _tm2[i].LostFocus += TimeBox_LostFocus;
+                _tm2[i].Foreground = new SolidColorBrush(Color.FromRgb(170,170,170));
             }
         }
 
@@ -384,7 +449,7 @@ namespace BowlingVideoEditor.Views
                 BorderBrush = new SolidColorBrush(Color.FromRgb(85,85,85)),
                 HorizontalContentAlignment = HorizontalAlignment.Center,
                 VerticalContentAlignment = VerticalAlignment.Center,
-                FontSize = 14, MaxLength = 3, Padding = new Thickness(2) };
+                FontSize = 12, MaxLength = 3, Padding = new Thickness(1) };
             Grid.SetRow(t, r); Grid.SetColumn(t, c); ScoreGrid.Children.Add(t); return t;
         }
 
@@ -392,7 +457,7 @@ namespace BowlingVideoEditor.Views
         {
             if (ScorePanel.Visibility == Visibility.Visible) { CloseScorePanel_Click(sender, e); return; }
             ScorePanel.Visibility = Visibility.Visible;
-            ScorePanelColumn.Width = new GridLength(290);
+            ScorePanelColumn.Width = new GridLength(320);
             _scoreVisible = true;
             RefreshScoreOverlay();
             StatusText.Text = "점수판 표시됨. 영상 위에서 마우스 드래그로 위치 이동 가능.";
@@ -437,20 +502,20 @@ namespace BowlingVideoEditor.Views
         private void ThrowBox_LostFocus(object sender, RoutedEventArgs e)
         {
             var box = sender as TextBox; if (box == null) return;
-            for (int i = 0; i < 10; i++) if (box == _t1[i] || box == _t2[i]) { ApplyRules(i); break; }
-            if (box == F10T3Box && F10T3Box.Text.Trim().ToUpper() == "10") F10T3Box.Text = "X";
+            for (int i = 0; i < 10; i++)
+            {
+                if (box == _t1[i] || box == _t2[i] || box == _t3[i])
+                { ApplyRules(i); break; }
+            }
             Recalc(); SyncScoreData();
             if (_scoreVisible) RefreshScoreOverlay();
         }
 
         private void TimeBox_LostFocus(object sender, RoutedEventArgs e)
         {
-            // 시간 형식 검증
             var box = sender as TextBox; if (box == null) return;
             if (!TimeSpan.TryParse(box.Text.Trim(), out _))
-            {
                 box.Text = "00:00:00";
-            }
             SyncScoreData();
             if (_scoreVisible) RefreshScoreOverlay();
             StatusText.Text = "프레임 시간이 업데이트되었습니다.";
@@ -462,28 +527,40 @@ namespace BowlingVideoEditor.Views
             if (v1 == "10") { _t1[idx].Text = "X"; v1 = "X"; }
             if (idx < 9)
             {
-                if (v1 == "X") { _t2[idx].Text = ""; _t2[idx].IsEnabled = false; }
+                // 1~9프레임
+                if (v1 == "X")
+                {
+                    _t2[idx].Text = ""; _t2[idx].IsEnabled = false;
+                    _tm2[idx].IsEnabled = false; _tm2[idx].Text = "00:00:00";
+                }
                 else
                 {
                     _t2[idx].IsEnabled = true;
+                    _tm2[idx].IsEnabled = true;
                     if (int.TryParse(v1, out int a) && int.TryParse(v2, out int b))
                     { if (a+b == 10) _t2[idx].Text = "/"; else if (a+b > 10) _t2[idx].Text = ""; }
                     if (v2 == "10") _t2[idx].Text = "/";
                 }
+                // 1~9프레임 3투구는 항상 비활성
+                _t3[idx].IsEnabled = false;
+                _t3[idx].Text = "";
             }
             else
             {
+                // 10프레임
                 if (v2 == "10") { _t2[idx].Text = "X"; v2 = "X"; }
                 bool bonus = v1 == "X" || v2 == "X" || v2 == "/";
                 if (!bonus && int.TryParse(v1, out int a) && int.TryParse(v2, out int b) && a+b == 10)
                 { _t2[idx].Text = "/"; bonus = true; }
-                F10T3Box.IsEnabled = bonus; if (!bonus) F10T3Box.Text = "";
+                _t3[9].IsEnabled = bonus;
+                if (!bonus) _t3[9].Text = "";
+                if (_t3[9].Text.Trim().ToUpper() == "10") _t3[9].Text = "X";
             }
         }
 
         private int Pins(int f, int th)
         {
-            string s = th == 0 ? _t1[f].Text : th == 1 ? _t2[f].Text : (f == 9 ? F10T3Box.Text : "");
+            string s = th == 0 ? _t1[f].Text : th == 1 ? _t2[f].Text : (f == 9 ? _t3[9].Text : "");
             s = s.Trim().ToUpper();
             if (s == "X") return 10;
             if (s == "/") return 10 - Pins(f, 0);
@@ -500,7 +577,7 @@ namespace BowlingVideoEditor.Views
                 else { rolls.Add(p1); rolls.Add(Pins(f, 1)); }
             }
             rolls.Add(Pins(9, 0)); rolls.Add(Pins(9, 1));
-            if (F10T3Box.IsEnabled) rolls.Add(Pins(9, 2));
+            if (_t3[9].IsEnabled) rolls.Add(Pins(9, 2));
 
             int ri = 0, cum = 0;
             for (int f = 0; f < 10; f++)
@@ -587,6 +664,14 @@ namespace BowlingVideoEditor.Views
             }
 
             UpdateTimeline();
+            // 분할 후 합쳐서 재생 (분할 위치로 이동)
+            long seekMs = 0;
+            for (int i = 0; i < _clips.Count; i++)
+            {
+                if ((long)_clips[i].StartTime.TotalMilliseconds >= (long)currentPos.TotalMilliseconds)
+                { seekMs = 0; for (int j = 0; j < i; j++) seekMs += (long)_clips[j].Duration.TotalMilliseconds; break; }
+            }
+            AutoMergeAndPlay(seekMs);
             StatusText.Text = $"재생 위치에서 분할 완료 (클립 {_clips.Count}개)";
         }
 
@@ -598,7 +683,25 @@ namespace BowlingVideoEditor.Views
             {
                 var p = new Progress<double>(v => ProgressBar.Value = v);
                 var o = await _videoService.ConcatenateVideosAsync(new System.Collections.Generic.List<VideoClip>(_clips), p);
-                _currentFilePath = o; PlayFile(o); StatusText.Text = "완료"; ProgressBar.Value = 0;
+                _currentFilePath = o;
+                _mergedFilePath = o;
+                var info = await FFMpegCore.FFProbe.AnalyseAsync(o);
+                var totalDuration = info.Duration;
+
+                // 클립 목록을 합쳐진 단일 클립으로 갱신
+                _clips.Clear();
+                _clips.Add(new VideoClip
+                {
+                    FilePath = o,
+                    StartTime = TimeSpan.Zero,
+                    EndTime = totalDuration,
+                    Order = 0
+                });
+
+                PlayFile(o);
+                UpdateTimeline();
+                StatusText.Text = $"합치기 완료 (총 {totalDuration:hh\\:mm\\:ss})";
+                ProgressBar.Value = 0;
             }
             catch (Exception ex) { MessageBox.Show($"오류: {ex.Message}"); StatusText.Text = "오류"; }
         }
@@ -859,9 +962,20 @@ namespace BowlingVideoEditor.Views
                 var hasScore = _currentTimeline != null && _currentTimeline.Entries.Count > 0;
                 var hasOverlays = _overlays.Count > 0;
 
+                // 클립이 여러 개면 먼저 합치기
+                string exportSource = _currentFilePath;
+                if (_clips.Count > 1)
+                {
+                    StatusText.Text = "클립 합치는 중...";
+                    exportSource = await _videoService.ConcatenateVideosAsync(
+                        new System.Collections.Generic.List<VideoClip>(_clips), p);
+                    ProgressBar.Value = 0;
+                    StatusText.Text = "내보내는 중...";
+                }
+
                 if (hasScore || hasOverlays)
                 {
-                    await _videoService.ExportFullAsync(_currentFilePath,
+                    await _videoService.ExportFullAsync(exportSource,
                         hasScore ? _currentTimeline : null,
                         hasOverlays ? _overlays : null,
                         100, 0.5, 0.5,
@@ -869,7 +983,7 @@ namespace BowlingVideoEditor.Views
                 }
                 else
                 {
-                    System.IO.File.Copy(_currentFilePath, dlg.FileName, true);
+                    System.IO.File.Copy(exportSource, dlg.FileName, true);
                 }
                 StatusText.Text = "내보내기 완료"; ProgressBar.Value = 0;
                 MessageBox.Show("완료!", "내보내기", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -897,14 +1011,137 @@ namespace BowlingVideoEditor.Views
             catch (Exception ex) { MessageBox.Show($"오류: {ex.Message}"); StatusText.Text = "준비"; }
         }
 
-        private void ClipListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        { if (ClipListBox.SelectedItem is VideoClip clip) { _currentFilePath = clip.FilePath; PlayFile(clip.FilePath); } }
-        private void MoveClipUp_Click(object sender, RoutedEventArgs e)
-        { var i = ClipListBox.SelectedIndex; if (i > 0) { _clips.Move(i, i-1); ClipListBox.SelectedIndex = i-1; } }
-        private void MoveClipDown_Click(object sender, RoutedEventArgs e)
-        { var i = ClipListBox.SelectedIndex; if (i >= 0 && i < _clips.Count-1) { _clips.Move(i, i+1); ClipListBox.SelectedIndex = i+1; } }
-        private void RemoveClip_Click(object sender, RoutedEventArgs e)
-        { if (ClipListBox.SelectedItem is VideoClip) _clips.RemoveAt(ClipListBox.SelectedIndex); }
+        private void ClipListBox_SelectionChanged(object sender, SelectionChangedEventArgs e) { }
+        private void MoveClipUp_Click(object sender, RoutedEventArgs e) { }
+        private void MoveClipDown_Click(object sender, RoutedEventArgs e) { }
+        private void RemoveClip_Click(object sender, RoutedEventArgs e) { }
+
+        // ===== 점수표 자동업데이트 =====
+
+        private void AutoScoreApply_Click(object sender, RoutedEventArgs e)
+        {
+            if (_clips.Count == 0)
+            {
+                MessageBox.Show("영상 클립이 없습니다.\n먼저 영상을 열고 구간 자르기를 해주세요.", "알림");
+                return;
+            }
+            ApplyAutoScoreTimes();
+        }
+
+        private void AutoScoreHelp_Click(object sender, RoutedEventArgs e)
+        {
+            MessageBox.Show(
+                "📋 시간 자동설정 기능\n\n" +
+                "잘려진 영상 클립을 기준으로 각 프레임의\n" +
+                "표출 시간을 자동으로 설정합니다.\n\n" +
+                "• 클립 1 시작 +2초 → 1프레임\n" +
+                "• 클립 2 시작 +2초 → 2프레임\n" +
+                "• 스트라이크가 아닌 경우:\n" +
+                "  - 1투구: 클립 시작 +2초\n" +
+                "  - 2투구: 클립 시작 +4초\n\n" +
+                "점수를 먼저 입력한 후 버튼을 누르면\n" +
+                "시간이 자동으로 채워집니다.",
+                "시간 자동설정 설명",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void ApplyAutoScoreTimes()
+        {
+            if (_clips.Count == 0) return;
+
+            // 각 클립의 전체 타임라인 기준 시작 시간 계산
+            var clipStarts = new System.Collections.Generic.List<TimeSpan>();
+            TimeSpan acc = TimeSpan.Zero;
+            foreach (var clip in _clips)
+            {
+                clipStarts.Add(acc);
+                acc += clip.Duration;
+            }
+
+            // 각 프레임을 클립에 1:1 매핑 (클립 수만큼)
+            int clipIdx = 0;
+            for (int i = 0; i < 10; i++)
+            {
+                var t1Text = _t1[i].Text.Trim().ToUpper();
+                if (string.IsNullOrEmpty(t1Text)) continue;
+                if (clipIdx >= clipStarts.Count) clipIdx = clipStarts.Count - 1;
+
+                var clipStart = clipStarts[clipIdx];
+
+                // 1투구 시간: 클립 시작 +2초
+                _tm[i].Text = (clipStart + TimeSpan.FromSeconds(2)).ToString(@"hh\:mm\:ss");
+
+                // 2투구 시간: 스트라이크가 아니면 클립 시작 +4초
+                if (t1Text != "X" && !string.IsNullOrEmpty(_t2[i].Text.Trim()))
+                {
+                    _tm2[i].Text = (clipStart + TimeSpan.FromSeconds(4)).ToString(@"hh\:mm\:ss");
+                }
+                else
+                {
+                    _tm2[i].Text = "00:00:00";
+                }
+
+                clipIdx++;
+            }
+
+            SyncScoreData();
+            if (_scoreVisible) RefreshScoreOverlay();
+            StatusText.Text = $"시간 자동설정 완료 (클립 {_clips.Count}개 기준)";
+        }
+
+        /// <summary>
+        /// 클립 변경 후 FFmpeg로 합쳐서 하나의 파일로 재생.
+        /// 합쳐진 파일 시간 = 타임라인 시간 = VLC 시간 (100% 싱크)
+        /// </summary>
+        private async void AutoMergeAndPlay(long seekToMs = 0)
+        {
+            if (_isMerging || _clips.Count == 0) return;
+            _isMerging = true;
+            StatusText.Text = "영상 처리 중...";
+
+            try
+            {
+                string result;
+                if (_clips.Count == 1)
+                {
+                    // 단일 클립 → 트림만
+                    result = await _videoService.TrimVideoAsync(
+                        _clips[0].FilePath, _clips[0].StartTime, _clips[0].EndTime);
+                }
+                else
+                {
+                    // 여러 클립 → 각각 트림 후 합치기
+                    result = await _videoService.ConcatenateVideosAsync(
+                        new System.Collections.Generic.List<VideoClip>(_clips));
+                }
+
+                _mergedFilePath = result;
+                _currentFilePath = result;
+                PlayFile(result);
+
+                // 합쳐진 파일에서 원하는 위치로 이동
+                if (seekToMs > 0)
+                {
+                    await Task.Delay(500); // VLC 로딩 대기
+                    Dispatcher.Invoke(() =>
+                    {
+                        if (_mp != null && _mp.Length > 0)
+                            _mp.Time = Math.Min(seekToMs, _mp.Length - 1);
+                    });
+                }
+
+                UpdateTimeline();
+                StatusText.Text = $"클립 {_clips.Count}개 준비 완료";
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = $"처리 실패: {ex.Message}";
+            }
+            finally
+            {
+                _isMerging = false;
+            }
+        }
 
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
@@ -922,261 +1159,232 @@ namespace BowlingVideoEditor.Views
             catch { }
         }
 
-        // ===== 타임라인 =====
+        // ===== 타임라인 (동적 트랙) =====
+
+        private Canvas _scoreTrackCanvas;
+        private Canvas _audioTrackCanvas;
+        private System.Windows.Shapes.Line _playheadLine;
+        private readonly System.Collections.Generic.List<Canvas> _videoTrackCanvases = new();
 
         private void UpdateTimeline()
         {
-            VideoTrack.Children.Clear();
-            ScoreTrack.Children.Clear();
-            AudioTrack.Children.Clear();
+            TrackGrid.Children.Clear();
+            TrackGrid.RowDefinitions.Clear();
+            _videoTrackCanvases.Clear();
             TimeRuler.Children.Clear();
 
-            double trackW = VideoTrack.ActualWidth;
-            if (trackW <= 0) trackW = 800;
-
+            // 총 길이 = VLC 재생 길이 (합쳐진 파일)
             long totalMs = _mp?.Length ?? 0;
-            if (totalMs <= 0 && _clips.Count > 0)
+            if (totalMs <= 0)
             {
-                // 클립 기반 총 길이 추정
-                foreach (var c in _clips)
-                    totalMs += (long)c.Duration.TotalMilliseconds;
+                foreach (var c in _clips) totalMs += (long)c.Duration.TotalMilliseconds;
             }
-            if (totalMs <= 0) totalMs = 60000; // 기본 1분
+            if (totalMs <= 0) totalMs = 60000;
 
-            double pxPerMs = trackW / totalMs;
+            double rulerW = TimeRuler.ActualWidth > 0 ? TimeRuler.ActualWidth : 800;
+            DrawTimeRuler(rulerW, totalMs);
+            double pxPerMs = rulerW / totalMs;
 
-            // 시간 눈금자
-            DrawTimeRuler(trackW, totalMs);
+            int row = 0;
 
-            // 영상 트랙 - 클립 블록
-            if (_clips.Count > 0)
+            // V1 영상 트랙
+            TrackGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(50) });
+            var vLabel = new Border
             {
-                long offset = 0;
-                for (int i = 0; i < _clips.Count; i++)
-                {
-                    var clip = _clips[i];
-                    double x = offset * pxPerMs;
-                    double w = clip.Duration.TotalMilliseconds * pxPerMs;
-                    if (w < 2) w = 2;
+                Background = new SolidColorBrush(Color.FromRgb(32, 32, 56)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(51, 51, 85)),
+                BorderThickness = new Thickness(0, 0, 1, 1), Padding = new Thickness(6, 0, 6, 0)
+            };
+            var vSp = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            vSp.Children.Add(new TextBlock { Text = "🎬 V1", Foreground = new SolidColorBrush(Color.FromRgb(68, 170, 255)), FontSize = 11, FontWeight = FontWeights.Bold });
+            vSp.Children.Add(new TextBlock { Text = $"영상 ({_clips.Count}클립)", Foreground = new SolidColorBrush(Color.FromRgb(102, 102, 136)), FontSize = 9 });
+            vLabel.Child = vSp;
+            Grid.SetRow(vLabel, row); Grid.SetColumn(vLabel, 0);
+            TrackGrid.Children.Add(vLabel);
 
-                    var block = new System.Windows.Shapes.Rectangle
-                    {
-                        Width = w, Height = 40,
-                        Fill = new SolidColorBrush(i == _selectedClipIdx
-                            ? Color.FromRgb(80, 160, 255)
-                            : Color.FromRgb(0, (byte)(120 + i * 15 % 80), (byte)(180 + i * 20 % 75))),
-                        RadiusX = 3, RadiusY = 3,
-                        Stroke = new SolidColorBrush(i == _selectedClipIdx ? Colors.Yellow : Color.FromRgb(80, 180, 255)),
-                        StrokeThickness = i == _selectedClipIdx ? 2 : 1
-                    };
-                    Canvas.SetLeft(block, x);
-                    Canvas.SetTop(block, 4);
-                    VideoTrack.Children.Add(block);
+            var vCanvas = new Canvas { Background = new SolidColorBrush(Color.FromRgb(26, 26, 46)), ClipToBounds = true };
+            vCanvas.MouseLeftButtonDown += SingleTrack_MouseDown;
+            Grid.SetRow(vCanvas, row); Grid.SetColumn(vCanvas, 1);
+            TrackGrid.Children.Add(vCanvas);
+            _videoTrackCanvases.Add(vCanvas);
 
-                    // 클립 이름
-                    var label = new TextBlock
-                    {
-                        Text = clip.FileName,
-                        Foreground = Brushes.White,
-                        FontSize = 9,
-                        MaxWidth = w - 4
-                    };
-                    label.TextTrimming = TextTrimming.CharacterEllipsis;
-                    Canvas.SetLeft(label, x + 4);
-                    Canvas.SetTop(label, 8);
-                    VideoTrack.Children.Add(label);
-
-                    // 시간 표시
-                    var timeLabel = new TextBlock
-                    {
-                        Text = $"{clip.StartTime:mm\\:ss} - {clip.EndTime:mm\\:ss}",
-                        Foreground = new SolidColorBrush(Color.FromRgb(150, 200, 255)),
-                        FontSize = 8
-                    };
-                    Canvas.SetLeft(timeLabel, x + 4);
-                    Canvas.SetTop(timeLabel, 24);
-                    VideoTrack.Children.Add(timeLabel);
-
-                    offset += (long)clip.Duration.TotalMilliseconds;
-                }
-            }
-            else if (!string.IsNullOrEmpty(_currentFilePath))
+            // 클립 블록: 순차 누적 위치에 표시
+            long offsetMs = 0;
+            for (int i = 0; i < _clips.Count; i++)
             {
-                // 단일 영상 블록
+                double x = offsetMs * pxPerMs;
+                double w = Math.Max(4, _clips[i].Duration.TotalMilliseconds * pxPerMs);
+
                 var block = new System.Windows.Shapes.Rectangle
                 {
-                    Width = trackW - 4, Height = 40,
-                    Fill = new SolidColorBrush(Color.FromRgb(30, 100, 180)),
+                    Width = w, Height = 40,
+                    Fill = new SolidColorBrush(i == _selectedClipIdx
+                        ? Color.FromRgb(80, 160, 255)
+                        : Color.FromRgb(0, (byte)(120 + i * 15 % 80), (byte)(180 + i * 20 % 75))),
                     RadiusX = 3, RadiusY = 3,
-                    Stroke = new SolidColorBrush(Color.FromRgb(80, 180, 255)),
-                    StrokeThickness = 1
+                    Stroke = new SolidColorBrush(i == _selectedClipIdx ? Colors.Yellow : Color.FromRgb(80, 180, 255)),
+                    StrokeThickness = i == _selectedClipIdx ? 2 : 1
                 };
-                Canvas.SetLeft(block, 2); Canvas.SetTop(block, 4);
-                VideoTrack.Children.Add(block);
+                Canvas.SetLeft(block, x); Canvas.SetTop(block, 4);
+                vCanvas.Children.Add(block);
 
-                var label = new TextBlock
+                if (w > 25)
                 {
-                    Text = System.IO.Path.GetFileName(_currentFilePath),
-                    Foreground = Brushes.White, FontSize = 9
-                };
-                Canvas.SetLeft(label, 6); Canvas.SetTop(label, 8);
-                VideoTrack.Children.Add(label);
-            }
-
-            // 점수판 트랙
-            if (_currentTimeline != null && _currentTimeline.Entries.Count > 0)
-            {
-                foreach (var entry in _currentTimeline.Entries)
-                {
-                    double x = entry.Timestamp.TotalMilliseconds * pxPerMs;
-                    var marker = new System.Windows.Shapes.Rectangle
-                    {
-                        Width = Math.Max(20, 40 * pxPerMs * 1000),
-                        Height = 30,
-                        Fill = new SolidColorBrush(Color.FromArgb(180, 0, 180, 80)),
-                        RadiusX = 2, RadiusY = 2
-                    };
-                    Canvas.SetLeft(marker, x); Canvas.SetTop(marker, 4);
-                    ScoreTrack.Children.Add(marker);
-
-                    var lbl = new TextBlock
-                    {
-                        Text = $"F{entry.FrameIndex}",
-                        Foreground = Brushes.White, FontSize = 9
-                    };
-                    Canvas.SetLeft(lbl, x + 3); Canvas.SetTop(lbl, 8);
-                    ScoreTrack.Children.Add(lbl);
+                    vCanvas.Children.Add(new TextBlock { Text = $"V{i + 1}", Foreground = Brushes.White, FontSize = 10, FontWeight = FontWeights.Bold, IsHitTestVisible = false });
+                    Canvas.SetLeft(vCanvas.Children[vCanvas.Children.Count - 1], x + 4);
+                    Canvas.SetTop(vCanvas.Children[vCanvas.Children.Count - 1], 6);
                 }
+                if (w > 50)
+                {
+                    vCanvas.Children.Add(new TextBlock { Text = $"{_clips[i].Duration:mm\\:ss}", Foreground = new SolidColorBrush(Color.FromRgb(200, 220, 255)), FontSize = 8, IsHitTestVisible = false });
+                    Canvas.SetLeft(vCanvas.Children[vCanvas.Children.Count - 1], x + 4);
+                    Canvas.SetTop(vCanvas.Children[vCanvas.Children.Count - 1], 22);
+                }
+
+                // 클립 경계선
+                if (i > 0)
+                {
+                    vCanvas.Children.Add(new System.Windows.Shapes.Line { X1 = x, X2 = x, Y1 = 2, Y2 = 46, Stroke = new SolidColorBrush(Color.FromRgb(255, 100, 100)), StrokeThickness = 1, StrokeDashArray = new DoubleCollection { 3, 2 }, IsHitTestVisible = false });
+                }
+                offsetMs += (long)_clips[i].Duration.TotalMilliseconds;
             }
+            row++;
 
-            // 오디오 트랙 - 가짜 파형 (시각적 표현)
-            DrawFakeWaveform(trackW);
+            // S1 점수판 트랙
+            TrackGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(36) });
+            var sBorder = new Border { Background = new SolidColorBrush(Color.FromRgb(32, 32, 56)), BorderBrush = new SolidColorBrush(Color.FromRgb(51, 51, 85)), BorderThickness = new Thickness(0, 0, 1, 1), Padding = new Thickness(6, 0, 6, 0) };
+            var sSp = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            sSp.Children.Add(new TextBlock { Text = "🎳 S1", Foreground = new SolidColorBrush(Color.FromRgb(0, 204, 106)), FontSize = 11, FontWeight = FontWeights.Bold });
+            sSp.Children.Add(new TextBlock { Text = "점수판", Foreground = new SolidColorBrush(Color.FromRgb(102, 102, 136)), FontSize = 9 });
+            sBorder.Child = sSp; Grid.SetRow(sBorder, row); Grid.SetColumn(sBorder, 0); TrackGrid.Children.Add(sBorder);
+            _scoreTrackCanvas = new Canvas { Background = new SolidColorBrush(Color.FromRgb(26, 26, 40)), ClipToBounds = true };
+            Grid.SetRow(_scoreTrackCanvas, row); Grid.SetColumn(_scoreTrackCanvas, 1); TrackGrid.Children.Add(_scoreTrackCanvas);
+            row++;
 
-            // 재생 헤드 업데이트
+            // A1 오디오 트랙
+            TrackGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(50) });
+            var aBorder = new Border { Background = new SolidColorBrush(Color.FromRgb(32, 32, 56)), BorderBrush = new SolidColorBrush(Color.FromRgb(51, 51, 85)), BorderThickness = new Thickness(0, 0, 1, 0), Padding = new Thickness(6, 0, 6, 0) };
+            var aSp2 = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
+            aSp2.Children.Add(new TextBlock { Text = "🔊 A1", Foreground = new SolidColorBrush(Color.FromRgb(68, 204, 68)), FontSize = 11, FontWeight = FontWeights.Bold });
+            aSp2.Children.Add(new TextBlock { Text = "오디오", Foreground = new SolidColorBrush(Color.FromRgb(102, 102, 136)), FontSize = 9 });
+            aBorder.Child = aSp2; Grid.SetRow(aBorder, row); Grid.SetColumn(aBorder, 0); TrackGrid.Children.Add(aBorder);
+            _audioTrackCanvas = new Canvas { Background = new SolidColorBrush(Color.FromRgb(21, 21, 40)), ClipToBounds = true };
+            Grid.SetRow(_audioTrackCanvas, row); Grid.SetColumn(_audioTrackCanvas, 1); TrackGrid.Children.Add(_audioTrackCanvas);
+            var rng2 = new Random(42); double wh2 = 40; int bars2 = (int)(rulerW / 3);
+            for (int bi = 0; bi < bars2; bi++)
+            {
+                double bh = rng2.NextDouble() * wh2 * 0.8 + wh2 * 0.1;
+                _audioTrackCanvas.Children.Add(new System.Windows.Shapes.Rectangle { Width = 2, Height = bh, Fill = new SolidColorBrush(Color.FromArgb(180, 40, (byte)(160 + rng2.Next(60)), 40)) });
+                Canvas.SetLeft(_audioTrackCanvas.Children[_audioTrackCanvas.Children.Count - 1], bi * 3);
+                Canvas.SetTop(_audioTrackCanvas.Children[_audioTrackCanvas.Children.Count - 1], (wh2 - bh) / 2 + 4);
+            }
+            row++;
+
+            // 재생 헤드
+            _playheadLine = new System.Windows.Shapes.Line { Y1 = 0, Y2 = row * 55, Stroke = Brushes.Red, StrokeThickness = 2 };
+            var phCanvas = new Canvas { IsHitTestVisible = false, ClipToBounds = true };
+            phCanvas.Children.Add(_playheadLine);
+            Grid.SetRow(phCanvas, 0); Grid.SetRowSpan(phCanvas, row); Grid.SetColumn(phCanvas, 1);
+            TrackGrid.Children.Add(phCanvas);
             UpdatePlayhead();
         }
 
         private void DrawTimeRuler(double trackW, long totalMs)
         {
-            double rulerW = TimeRuler.ActualWidth > 0 ? TimeRuler.ActualWidth : trackW;
-            double pxPerMs = rulerW / totalMs;
-
-            // 적절한 간격 계산
-            double intervalMs = 1000; // 1초
-            if (totalMs > 600000) intervalMs = 60000; // 1분
-            else if (totalMs > 60000) intervalMs = 10000; // 10초
-            else if (totalMs > 10000) intervalMs = 5000; // 5초
-
+            double pxPerMs = trackW / totalMs;
+            double intervalMs = totalMs > 600000 ? 60000 : totalMs > 60000 ? 10000 : totalMs > 10000 ? 5000 : 1000;
             for (double ms = 0; ms <= totalMs; ms += intervalMs)
             {
                 double x = ms * pxPerMs;
-                var tick = new System.Windows.Shapes.Line
-                {
-                    X1 = x, X2 = x, Y1 = 14, Y2 = 24,
-                    Stroke = new SolidColorBrush(Color.FromRgb(100, 100, 130)),
-                    StrokeThickness = 1
-                };
-                TimeRuler.Children.Add(tick);
-
+                TimeRuler.Children.Add(new System.Windows.Shapes.Line { X1 = x, X2 = x, Y1 = 14, Y2 = 24, Stroke = new SolidColorBrush(Color.FromRgb(100, 100, 130)), StrokeThickness = 1 });
                 var ts = TimeSpan.FromMilliseconds(ms);
-                string fmt = totalMs > 600000 ? ts.ToString(@"mm\:ss") : ts.ToString(@"m\:ss");
-                var lbl = new TextBlock
-                {
-                    Text = fmt, FontSize = 9,
-                    Foreground = new SolidColorBrush(Color.FromRgb(130, 130, 160))
-                };
-                Canvas.SetLeft(lbl, x + 2); Canvas.SetTop(lbl, 2);
-                TimeRuler.Children.Add(lbl);
+                var lbl = new TextBlock { Text = totalMs > 600000 ? ts.ToString(@"mm\:ss") : ts.ToString(@"m\:ss"), FontSize = 9, Foreground = new SolidColorBrush(Color.FromRgb(130, 130, 160)) };
+                Canvas.SetLeft(lbl, x + 2); Canvas.SetTop(lbl, 2); TimeRuler.Children.Add(lbl);
             }
         }
 
-        private void DrawFakeWaveform(double trackW)
+        /// <summary>VLC 절대 시간 → 타임라인 순차 시간</summary>
+        private long AbsoluteToSequential(long absMs)
         {
-            var rng = new Random(42);
-            double h = 50;
-            int bars = (int)(trackW / 3);
-            for (int i = 0; i < bars; i++)
+            long seqMs = 0;
+            foreach (var c in _clips)
             {
-                double barH = rng.NextDouble() * h * 0.8 + h * 0.1;
-                var bar = new System.Windows.Shapes.Rectangle
-                {
-                    Width = 2, Height = barH,
-                    Fill = new SolidColorBrush(Color.FromArgb(180, 40, (byte)(160 + rng.Next(60)), 40))
-                };
-                Canvas.SetLeft(bar, i * 3);
-                Canvas.SetTop(bar, (h - barH) / 2 + 4);
-                AudioTrack.Children.Add(bar);
+                long startMs = (long)c.StartTime.TotalMilliseconds;
+                long endMs = (long)c.EndTime.TotalMilliseconds;
+                if (absMs >= startMs && absMs < endMs)
+                    return seqMs + (absMs - startMs);
+                seqMs += endMs - startMs;
             }
+            return seqMs;
+        }
+
+        /// <summary>타임라인 순차 시간 → VLC 절대 시간</summary>
+        private long SequentialToAbsolute(long seqMs)
+        {
+            long acc = 0;
+            foreach (var c in _clips)
+            {
+                long durMs = (long)c.Duration.TotalMilliseconds;
+                if (seqMs < acc + durMs)
+                    return (long)c.StartTime.TotalMilliseconds + (seqMs - acc);
+                acc += durMs;
+            }
+            // 마지막 클립 끝
+            if (_clips.Count > 0)
+                return (long)_clips[_clips.Count - 1].EndTime.TotalMilliseconds;
+            return seqMs;
         }
 
         private void UpdatePlayhead()
         {
-            if (_mp == null || _mp.Length <= 0) return;
-            double trackW = VideoTrack.ActualWidth;
-            if (trackW <= 0) return;
+            if (_mp == null || _mp.Length <= 0 || _playheadLine == null) return;
+            double trackW = TimeRuler.ActualWidth > 0 ? TimeRuler.ActualWidth : 800;
             double pos = (double)_mp.Time / _mp.Length * trackW;
-            Canvas.SetLeft(PlayheadLine, pos);
-            PlayheadLine.Y2 = 160;
+            Canvas.SetLeft(_playheadLine, Math.Min(pos, trackW));
         }
 
-        private void Track_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        private void SingleTrack_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            var pos = e.GetPosition(VideoTrack);
-            double trackW = VideoTrack.ActualWidth;
-            if (trackW <= 0) return;
+            var canvas = sender as Canvas; if (canvas == null) return;
+            double trackW = canvas.ActualWidth > 0 ? canvas.ActualWidth : 800;
+            double clickX = e.GetPosition(canvas).X;
 
-            // 클립 선택
-            if (_clips.Count > 0)
-            {
-                long totalMs = 0;
-                foreach (var c in _clips) totalMs += (long)c.Duration.TotalMilliseconds;
-                if (totalMs <= 0) return;
-                double pxPerMs = trackW / totalMs;
-                long accMs = 0;
-
-                for (int i = 0; i < _clips.Count; i++)
-                {
-                    long clipMs = (long)_clips[i].Duration.TotalMilliseconds;
-                    double leftEdge = accMs * pxPerMs;
-                    double rightEdge = (accMs + clipMs) * pxPerMs;
-
-                    if (pos.X >= leftEdge && pos.X < rightEdge)
-                    {
-                        _selectedClipIdx = i;
-                        UpdateTimeline(); // 선택 표시 갱신
-                        break;
-                    }
-                    accMs += clipMs;
-                }
-            }
-
-            // 재생 위치 이동
+            // 클릭 위치 → VLC 시간 (합쳐진 파일이므로 직접 변환)
             if (_mp != null && _mp.Length > 0)
             {
-                double ratio = pos.X / trackW;
-                _mp.Time = (long)(ratio * _mp.Length);
+                long targetMs = (long)(clickX / trackW * _mp.Length);
+                _mp.Time = Math.Min(targetMs, _mp.Length - 1);
+
+                // 클릭한 위치의 클립 선택
+                _selectedClipIdx = -1;
+                long acc = 0;
+                for (int i = 0; i < _clips.Count; i++)
+                {
+                    long durMs = (long)_clips[i].Duration.TotalMilliseconds;
+                    if (targetMs >= acc && targetMs < acc + durMs) { _selectedClipIdx = i; break; }
+                    acc += durMs;
+                }
             }
+            UpdateTimeline();
         }
 
-        private void Track_MouseMove(object sender, System.Windows.Input.MouseEventArgs e) { }
-        private void Track_MouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e) { }
+        private void VideoTrack_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e) { }
+        private void VideoTrack_MouseMove(object sender, System.Windows.Input.MouseEventArgs e) { }
+        private void VideoTrack_MouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e) { }
+        private void VideoTrack_Drop(object sender, DragEventArgs e) { }
 
         private void DeleteSelectedClip_Click(object sender, RoutedEventArgs e)
         {
             if (_selectedClipIdx < 0 || _selectedClipIdx >= _clips.Count)
-            {
-                MessageBox.Show("타임라인에서 삭제할 클립을 먼저 클릭하세요.");
-                return;
-            }
-
+            { MessageBox.Show("타임라인에서 삭제할 클립을 먼저 클릭하세요."); return; }
             var clip = _clips[_selectedClipIdx];
-            if (MessageBox.Show($"클립 '{clip.FileName}' ({clip.StartTime:mm\\:ss} ~ {clip.EndTime:mm\\:ss})을 삭제하시겠습니까?",
+            if (MessageBox.Show($"V{_selectedClipIdx + 1} '{clip.FileName}' ({clip.Duration:mm\\:ss})을 삭제하시겠습니까?",
                 "클립 삭제", MessageBoxButton.YesNo) == MessageBoxResult.Yes)
             {
-                _clips.RemoveAt(_selectedClipIdx);
-                _selectedClipIdx = -1;
-                UpdateTimeline();
-                StatusText.Text = $"클립 삭제됨 (남은 클립: {_clips.Count}개)";
+                _clips.RemoveAt(_selectedClipIdx); _selectedClipIdx = -1;
+                if (_clips.Count > 0) AutoMergeAndPlay();
+                else { _currentFilePath = null; _mergedFilePath = null; UpdateTimeline(); }
+                StatusText.Text = $"클립 삭제됨 (남은: {_clips.Count}개)";
             }
         }
 

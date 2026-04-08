@@ -115,33 +115,44 @@ namespace BowlingVideoEditor.Services
             if (timeline != null && timeline.Entries.Count > 0)
             {
                 var score = timeline.Score ?? new BowlingScore();
-                double imgScale = videoW / 1920.0 * timeline.ScalePercent;
-                if (imgScale < 0.3) imgScale = 0.3;
-                int imgW = (int)(900 * imgScale);
-                int imgH = (int)(120 * imgScale);
-                int fontSize = Math.Max(10, (int)(timeline.FontSize * imgScale));
+                // 편집 시 사용한 크기를 그대로 사용
+                int imgW = timeline.ImageWidth > 0 ? timeline.ImageWidth : (int)(900 * timeline.ScalePercent);
+                int imgH = timeline.ImageHeight > 0 ? timeline.ImageHeight : (int)(120 * timeline.ScalePercent);
+                int fontSize = timeline.FontSize;
                 int posX = (int)(videoW * timeline.PositionX);
                 int posY = (int)(videoH * timeline.PositionY);
 
                 var entries = timeline.Entries.OrderBy(e => e.Timestamp).ThenBy(e => e.FrameIndex).ToList();
-                var timeGroups = entries.GroupBy(e => e.Timestamp).OrderBy(g => g.Key).ToList();
 
-                // 빈 점수판 + 시간대별 이미지
-                double firstTime = timeGroups[0].Key.TotalSeconds;
+                // 각 엔트리를 개별 phase로 생성 (1투/2투 순차 표시)
                 var phases = new List<(double tStart, double tEnd, string img)>();
 
+                double firstTime = entries[0].Timestamp.TotalSeconds;
                 if (firstTime > 0.1)
                     phases.Add((0, firstTime, _scoreImg.RenderScoreImage(score, 0, imgW, imgH, fontSize)));
 
-                for (int g = 0; g < timeGroups.Count; g++)
+                for (int ei = 0; ei < entries.Count; ei++)
                 {
-                    double ts = timeGroups[g].Key.TotalSeconds;
-                    double te = g + 1 < timeGroups.Count ? timeGroups[g + 1].Key.TotalSeconds : 86400;
+                    double ts = entries[ei].Timestamp.TotalSeconds;
+                    double te = ei + 1 < entries.Count ? entries[ei + 1].Timestamp.TotalSeconds : 86400;
                     if (Math.Abs(te - ts) < 0.01) te = 86400;
+
+                    // 이 시점까지 보이는 프레임 수 계산
                     int vis = 0;
-                    for (int gi = 0; gi <= g; gi++)
-                        foreach (var en in timeGroups[gi]) vis = Math.Max(vis, en.FrameIndex);
-                    phases.Add((ts, te, _scoreImg.RenderScoreImage(score, vis, imgW, imgH, fontSize)));
+                    int lastThrows = 2;
+                    for (int pi = 0; pi <= ei; pi++)
+                    {
+                        if (entries[pi].FrameIndex > vis)
+                        {
+                            vis = entries[pi].FrameIndex;
+                            lastThrows = string.IsNullOrEmpty(entries[pi].Throw2) ? 1 : 2;
+                        }
+                        else if (entries[pi].FrameIndex == vis && !string.IsNullOrEmpty(entries[pi].Throw2))
+                        {
+                            lastThrows = 2;
+                        }
+                    }
+                    phases.Add((ts, te, _scoreImg.RenderScoreImage(score, vis, imgW, imgH, fontSize, lastThrows)));
                 }
 
                 foreach (var p in phases)

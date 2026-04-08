@@ -121,6 +121,10 @@ namespace BowlingVideoEditor.Models
         public double ScalePercent { get; set; } = 1.0;
         /// <summary>점수판 폰트 크기 기준값</summary>
         public int FontSize { get; set; } = 28;
+        /// <summary>편집 시 사용한 점수판 이미지 너비 (px)</summary>
+        public int ImageWidth { get; set; } = 900;
+        /// <summary>편집 시 사용한 점수판 이미지 높이 (px)</summary>
+        public int ImageHeight { get; set; } = 120;
 
         public event PropertyChangedEventHandler PropertyChanged;
         protected void OnPropertyChanged([CallerMemberName] string name = null)
