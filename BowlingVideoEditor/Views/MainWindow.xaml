@@ -36,7 +36,6 @@
         <Grid Grid.Row="1" Margin="8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="220"/>
                 <ColumnDefinition x:Name="ScorePanelColumn" Width="0"/>
             </Grid.ColumnDefinitions>
 
@@ -45,38 +44,8 @@
                 <WindowsFormsHost x:Name="WfHost" ClipToBounds="True"/>
             </Grid>
 
-            <!-- Clip List -->
-            <Border Grid.Column="1" Background="#FF252526" CornerRadius="4" Margin="8,0,0,0" Padding="8">
-                <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="클립 목록" Foreground="#FFCCCCCC" FontSize="14" Margin="0,0,0,8"/>
-                    <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Button Content="▲" Click="MoveClipUp_Click" Width="35"/>
-                        <Button Content="▼" Click="MoveClipDown_Click" Width="35"/>
-                        <Button Content="✕" Click="RemoveClip_Click" Width="35"/>
-                    </StackPanel>
-                    <ListBox x:Name="ClipListBox" Background="Transparent" Foreground="White"
-                             BorderThickness="0" SelectionChanged="ClipListBox_SelectionChanged">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Margin="4">
-                                    <TextBlock Text="{Binding FileName}" FontWeight="SemiBold"/>
-                                    <TextBlock Foreground="#FF999999">
-                                        <TextBlock.Text>
-                                            <MultiBinding StringFormat="{}{0:hh\:mm\:ss} ~ {1:hh\:mm\:ss}">
-                                                <Binding Path="StartTime"/>
-                                                <Binding Path="EndTime"/>
-                                            </MultiBinding>
-                                        </TextBlock.Text>
-                                    </TextBlock>
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-                </DockPanel>
-            </Border>
-
             <!-- Score Panel -->
-            <Border x:Name="ScorePanel" Grid.Column="2" Background="#FF252526" CornerRadius="4"
+            <Border x:Name="ScorePanel" Grid.Column="1" Background="#FF252526" CornerRadius="4"
                     Margin="8,0,0,0" Padding="10" Visibility="Collapsed">
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" Text="🎳 점수판" Foreground="#FF007ACC"
@@ -87,34 +56,44 @@
                                  Background="#FF3E3E42" Foreground="White" BorderBrush="#FF555555"
                                  Padding="4,3" FontSize="13"/>
                     </StackPanel>
+
+                    <!-- 자동업데이트 버튼 -->
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
+                        <Button Content="⏱ 시간 자동설정" Click="AutoScoreApply_Click"
+                                FontSize="11" Padding="8,3"/>
+                        <Button Content="?" Width="20" Height="20" FontSize="10" Padding="0"
+                                Margin="6,0,0,0" VerticalAlignment="Center"
+                                Click="AutoScoreHelp_Click" ToolTip="자동업데이트 설명"/>
+                    </StackPanel>
+
                     <ScrollViewer DockPanel.Dock="Top" VerticalScrollBarVisibility="Auto" Margin="0,0,0,8">
                         <Grid x:Name="ScoreGrid">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="30"/><ColumnDefinition Width="50"/>
-                                <ColumnDefinition Width="50"/><ColumnDefinition Width="50"/>
-                                <ColumnDefinition Width="75"/>
+                                <ColumnDefinition Width="24"/>
+                                <ColumnDefinition Width="36"/>
+                                <ColumnDefinition Width="36"/>
+                                <ColumnDefinition Width="36"/>
+                                <ColumnDefinition Width="40"/>
+                                <ColumnDefinition Width="58"/>
+                                <ColumnDefinition Width="58"/>
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="24"/>
-                                <RowDefinition Height="32"/><RowDefinition Height="32"/>
-                                <RowDefinition Height="32"/><RowDefinition Height="32"/>
-                                <RowDefinition Height="32"/><RowDefinition Height="32"/>
-                                <RowDefinition Height="32"/><RowDefinition Height="32"/>
-                                <RowDefinition Height="32"/><RowDefinition Height="32"/>
+                                <RowDefinition Height="22"/>
+                                <RowDefinition Height="30"/><RowDefinition Height="30"/>
+                                <RowDefinition Height="30"/><RowDefinition Height="30"/>
+                                <RowDefinition Height="30"/><RowDefinition Height="30"/>
+                                <RowDefinition Height="30"/><RowDefinition Height="30"/>
+                                <RowDefinition Height="30"/><RowDefinition Height="30"/>
                             </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="F" Foreground="#FF888888" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Row="0" Grid.Column="1" Text="1투" Foreground="#FF888888" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Row="0" Grid.Column="2" Text="2투" Foreground="#FF888888" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Row="0" Grid.Column="3" Text="점수" Foreground="#FF888888" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            <TextBlock Grid.Row="0" Grid.Column="4" Text="시간" Foreground="#FF888888" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="F" Foreground="#FF888888" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="1투" Foreground="#FF888888" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="2투" Foreground="#FF888888" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Row="0" Grid.Column="3" Text="3투" Foreground="#FF888888" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Row="0" Grid.Column="4" Text="점수" Foreground="#FF888888" FontSize="10" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Row="0" Grid.Column="5" Text="1투시간" Foreground="#FF888888" FontSize="9" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Row="0" Grid.Column="6" Text="2투시간" Foreground="#FF888888" FontSize="9" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Grid>
                     </ScrollViewer>
-                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,4">
-                        <TextBlock Text="10F 3투:" Foreground="#FFAAAAAA" FontSize="11" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                        <TextBox x:Name="F10T3Box" Width="40" Background="#FF3E3E42" Foreground="White"
-                                 BorderBrush="#FF555555" HorizontalContentAlignment="Center" FontSize="12"
-                                 IsEnabled="False" LostFocus="ThrowBox_LostFocus"/>
-                    </StackPanel>
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6">
                         <TextBlock Text="Total:" Foreground="White" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0"/>
                         <TextBlock x:Name="TotalScoreText" Text="0" Foreground="#FF00CC6A" FontSize="22" FontWeight="Bold"/>
@@ -191,58 +170,12 @@
                 <!-- Tracks -->
                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
                               HorizontalScrollBarVisibility="Disabled">
-                    <Grid>
+                    <Grid x:Name="TrackGrid">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="80"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="50"/>
-                            <RowDefinition Height="40"/>
-                            <RowDefinition Height="60"/>
-                        </Grid.RowDefinitions>
-
-                        <!-- Track Labels -->
-                        <Border Grid.Row="0" Grid.Column="0" Background="#FF202038" BorderBrush="#FF333355" BorderThickness="0,0,1,1" Padding="6,0">
-                            <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="🎬 V1" Foreground="#FF44AAFF" FontSize="11" FontWeight="Bold"/>
-                                <TextBlock Text="영상" Foreground="#FF666688" FontSize="9"/>
-                            </StackPanel>
-                        </Border>
-                        <Border Grid.Row="1" Grid.Column="0" Background="#FF202038" BorderBrush="#FF333355" BorderThickness="0,0,1,1" Padding="6,0">
-                            <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="🎳 S1" Foreground="#FF00CC6A" FontSize="11" FontWeight="Bold"/>
-                                <TextBlock Text="점수판" Foreground="#FF666688" FontSize="9"/>
-                            </StackPanel>
-                        </Border>
-                        <Border Grid.Row="2" Grid.Column="0" Background="#FF202038" BorderBrush="#FF333355" BorderThickness="0,0,1,0" Padding="6,0">
-                            <StackPanel VerticalAlignment="Center">
-                                <TextBlock Text="🔊 A1" Foreground="#FF44CC44" FontSize="11" FontWeight="Bold"/>
-                                <TextBlock Text="오디오" Foreground="#FF666688" FontSize="9"/>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- Video Track -->
-                        <Canvas x:Name="VideoTrack" Grid.Row="0" Grid.Column="1"
-                                Background="#FF1A1A2E" ClipToBounds="True"
-                                MouseLeftButtonDown="Track_MouseDown"
-                                MouseMove="Track_MouseMove"
-                                MouseLeftButtonUp="Track_MouseUp"/>
-
-                        <!-- Score Track -->
-                        <Canvas x:Name="ScoreTrack" Grid.Row="1" Grid.Column="1"
-                                Background="#FF1A1A28" ClipToBounds="True"/>
-
-                        <!-- Audio Track (waveform) -->
-                        <Canvas x:Name="AudioTrack" Grid.Row="2" Grid.Column="1"
-                                Background="#FF151528" ClipToBounds="True"/>
-
-                        <!-- Playhead (spans all tracks) -->
-                        <Canvas x:Name="PlayheadCanvas" Grid.Row="0" Grid.RowSpan="3" Grid.Column="1"
-                                IsHitTestVisible="False" ClipToBounds="True">
-                            <Line x:Name="PlayheadLine" Y1="0" Y2="200"
-                                  Stroke="#FFFF4444" StrokeThickness="2"/>
-                        </Canvas>
+                        <!-- 동적으로 V1,V2... 트랙 + S1 + A1 추가됨 -->
                     </Grid>
                 </ScrollViewer>
             </Grid>

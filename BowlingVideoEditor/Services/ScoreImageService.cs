@@ -23,7 +23,7 @@ namespace BowlingVideoEditor.Services
         /// visibleFrames: 표시할 프레임 수 (1~10). 시간대별로 다르게 호출.
         /// </summary>
         public string RenderScoreImage(BowlingScore score, int visibleFrames = 10,
-            int width = 900, int height = 120, int fontSize = 16)
+            int width = 900, int height = 120, int fontSize = 16, int lastFrameThrows = 2)
         {
             using var bmp = new Bitmap(width, height);
             using var g = Graphics.FromImage(bmp);
@@ -84,6 +84,8 @@ namespace BowlingVideoEditor.Services
                 if (f >= visibleFrames) continue;
 
                 var frame = score.Frames[f];
+                bool isLastVisible = (f == visibleFrames - 1);
+                bool showThrow2 = !isLastVisible || lastFrameThrows >= 2;
 
                 // 1투구
                 if (!string.IsNullOrEmpty(frame.Throw1))
@@ -95,7 +97,7 @@ namespace BowlingVideoEditor.Services
                     int boxW = colW / 3;
                     int boxH = throwH / 2;
                     g.DrawRectangle(linePen, x + colW - boxW, headerH, boxW, boxH);
-                    if (!string.IsNullOrEmpty(frame.Throw2))
+                    if (showThrow2 && !string.IsNullOrEmpty(frame.Throw2))
                         g.DrawString(frame.Throw2, throw2Font, yellowBrush, x + colW - boxW + 3, headerH + 2);
                 }
                 else
@@ -104,14 +106,15 @@ namespace BowlingVideoEditor.Services
                     int third = colW / 3;
                     g.DrawLine(linePen, x + third, headerH, x + third, headerH + throwH);
                     g.DrawLine(linePen, x + third * 2, headerH, x + third * 2, headerH + throwH);
-                    if (!string.IsNullOrEmpty(frame.Throw2))
+                    if (showThrow2 && !string.IsNullOrEmpty(frame.Throw2))
                         g.DrawString(frame.Throw2, throwFont, whiteBrush, x + third + 4, headerH + 4);
-                    if (!string.IsNullOrEmpty(frame.Throw3))
+                    if (showThrow2 && !string.IsNullOrEmpty(frame.Throw3))
                         g.DrawString(frame.Throw3, throwFont, whiteBrush, x + third * 2 + 4, headerH + 4);
                 }
 
-                // 누적 점수
-                if (frame.Score > 0)
+                // 누적 점수 (2투까지 보일 때만, 또는 스트라이크)
+                bool showScore = showThrow2 || frame.Throw1?.Trim().ToUpper() == "X";
+                if (showScore && frame.Score > 0)
                 {
                     var sStr = frame.Score.ToString();
                     var sSize = g.MeasureString(sStr, scoreFont);
@@ -151,7 +154,7 @@ namespace BowlingVideoEditor.Services
         /// </summary>
         public string RenderCompositeOverlay(BowlingScore score, int visibleFrames,
             int scoreW, int scoreH, int scoreFontSize, int scoreX, int scoreY,
-            List<OverlayItem> overlays, int canvasW, int canvasH)
+            List<OverlayItem> overlays, int canvasW, int canvasH, int lastFrameThrows = 2)
         {
             using var bmp = new Bitmap(canvasW, canvasH);
             using var g = Graphics.FromImage(bmp);
@@ -162,7 +165,7 @@ namespace BowlingVideoEditor.Services
             // 1) 점수판 그리기
             if (score != null && scoreW > 0 && scoreH > 0)
             {
-                var scoreImgPath = RenderScoreImage(score, visibleFrames, scoreW, scoreH, scoreFontSize);
+                var scoreImgPath = RenderScoreImage(score, visibleFrames, scoreW, scoreH, scoreFontSize, lastFrameThrows);
                 using var scoreImg = Image.FromFile(scoreImgPath);
                 g.DrawImage(scoreImg, scoreX, scoreY, scoreW, scoreH);
             }
