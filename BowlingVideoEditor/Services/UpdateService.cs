@@ -42,11 +42,14 @@ namespace BowlingVideoEditor.Services
 
                 if (latestVersion > currentVersion)
                 {
-                    var asset = latest.Assets.FirstOrDefault(a => a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
+                    // .exe 설치파일 또는 .zip 찾기
+                    var asset = latest.Assets.FirstOrDefault(a =>
+                        a.Name.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) ??
+                        latest.Assets.FirstOrDefault(a =>
+                        a.Name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase));
+
                     if (asset != null)
-                    {
                         return (true, latest.TagName, asset.BrowserDownloadUrl, latest.Body);
-                    }
                 }
 
                 return (false, latest.TagName, string.Empty, string.Empty);
@@ -67,10 +70,12 @@ namespace BowlingVideoEditor.Services
             var updateDir = Path.Combine(Path.GetTempPath(), "BowlingVideoEditor_Update");
             Directory.CreateDirectory(updateDir);
 
-            var zipPath = Path.Combine(updateDir, "update.zip");
+            bool isExe = downloadUrl.EndsWith(".exe", StringComparison.OrdinalIgnoreCase);
+            var fileName = isExe ? "BowlingVideoEditor_Setup.exe" : "update.zip";
+            var downloadPath = Path.Combine(updateDir, fileName);
 
             using (var stream = await response.Content.ReadAsStreamAsync())
-            using (var fileStream = new FileStream(zipPath, System.IO.FileMode.Create))
+            using (var fileStream = new FileStream(downloadPath, System.IO.FileMode.Create))
             {
                 var buffer = new byte[8192];
                 long totalRead = 0;
@@ -85,30 +90,40 @@ namespace BowlingVideoEditor.Services
                 }
             }
 
-            System.IO.Compression.ZipFile.ExtractToDirectory(zipPath, updateDir, true);
-
-            var appDir = AppDomain.CurrentDomain.BaseDirectory;
-            var batchPath = Path.Combine(updateDir, "update.bat");
-            var batchContent = $"""
-                @echo off
-                timeout /t 2 /nobreak >nul
-                xcopy /s /y "{updateDir}\*.*" "{appDir}"
-                del /q "{zipPath}"
-                start "" "{Path.Combine(appDir, "BowlingVideoEditor.exe")}"
-                del "%~f0"
-                """;
-
-            await File.WriteAllTextAsync(batchPath, batchContent);
-
-            Process.Start(new ProcessStartInfo
+            if (isExe)
             {
-                FileName = batchPath,
-                UseShellExecute = true,
-                CreateNoWindow = true,
-                WindowStyle = ProcessWindowStyle.Hidden
-            });
-
-            Environment.Exit(0);
+                // 설치파일 실행
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = downloadPath,
+                    UseShellExecute = true
+                });
+                Environment.Exit(0);
+            }
+            else
+            {
+                // zip 방식 (기존 로직)
+                System.IO.Compression.ZipFile.ExtractToDirectory(downloadPath, updateDir, true);
+                var appDir = AppDomain.CurrentDomain.BaseDirectory;
+                var batchPath = Path.Combine(updateDir, "update.bat");
+                var batchContent = $"""
+                    @echo off
+                    timeout /t 2 /nobreak >nul
+                    xcopy /s /y "{updateDir}\*.*" "{appDir}"
+                    del /q "{downloadPath}"
+                    start "" "{Path.Combine(appDir, "BowlingVideoEditor.exe")}"
+                    del "%~f0"
+                    """;
+                await File.WriteAllTextAsync(batchPath, batchContent);
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = batchPath,
+                    UseShellExecute = true,
+                    CreateNoWindow = true,
+                    WindowStyle = ProcessWindowStyle.Hidden
+                });
+                Environment.Exit(0);
+            }
         }
 
         private static Version ParseVersion(string tag)

@@ -24,7 +24,7 @@ namespace BowlingVideoEditor.Views
 
         private readonly VideoService _videoService = new();
         private readonly ScoreImageService _scoreImgService = new();
-        private readonly UpdateService _updateService = new("YOUR_GITHUB_USERNAME", "BowlingVideoEditor");
+        private readonly UpdateService _updateService = new("grasion", "BowlingVideoEditor");
         private readonly ObservableCollection<VideoClip> _clips = new();
         private readonly DispatcherTimer _timer;
         private bool _isDraggingSlider;
