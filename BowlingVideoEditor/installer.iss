@@ -1,12 +1,12 @@
 ﻿[Setup]
 AppName=볼링 영상 편집기
-AppVersion=1.0.1
+AppVersion=1.0.2
 AppPublisher=BowlingVideoEditor
 AppPublisherURL=https://github.com/grasion/BowlingVideoEditor
 DefaultDirName={autopf}\BowlingVideoEditor
 DefaultGroupName=볼링 영상 편집기
 OutputDir=installer_output
-OutputBaseFilename=BowlingVideoEditor_Setup_v1.0.1
+OutputBaseFilename=BowlingVideoEditor_Setup_v1.0.2
 Compression=lzma2
 SolidCompression=yes
 SetupIconFile=Resources\icon.ico

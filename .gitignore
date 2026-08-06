@@ -14,4 +14,9 @@ BowlingVideoEditor/icon.ico
 BowlingVideoEditor/create_installer.ps1
 BowlingVideoEditor/create_setup.ps1
 BowlingVideoEditor/setup_script.bat
+BowlingVideoEditor/Patcher/output/
+BowlingVideoEditor/Patcher/bin/
+BowlingVideoEditor/Patcher/obj/
+BowlingVideoEditorApp/
+install_flutter.ps1
 update_version.bat

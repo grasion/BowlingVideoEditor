@@ -40,6 +40,9 @@ namespace BowlingVideoEditor.Views
         private string _mergedFilePath; // 클립 합쳐진 임시 파일
         private bool _isMerging; // 합치기 진행 중
 
+        // Undo 스택
+        private readonly System.Collections.Generic.Stack<System.Collections.Generic.List<VideoClip>> _undoStack = new();
+
         // 점수판 드래그
         private bool _logoDragging;
         private System.Drawing.Point _logoDragStart;
@@ -599,10 +602,112 @@ namespace BowlingVideoEditor.Views
 
         // ===== 편집/내보내기 =====
 
+        private void SaveUndoState()
+        {
+            var snapshot = new System.Collections.Generic.List<VideoClip>();
+            foreach (var c in _clips)
+                snapshot.Add(new VideoClip { FilePath = c.FilePath, StartTime = c.StartTime, EndTime = c.EndTime, Order = c.Order });
+            _undoStack.Push(snapshot);
+            if (_undoStack.Count > 30) { } // 최대 30단계 유지
+        }
+
+        private void Undo_Click(object sender, RoutedEventArgs e)
+        {
+            if (_undoStack.Count == 0) { StatusText.Text = "실행취소할 내용이 없습니다."; return; }
+            var prev = _undoStack.Pop();
+            _clips.Clear();
+            foreach (var c in prev) _clips.Add(c);
+            AutoMergeAndPlay();
+            StatusText.Text = $"실행취소 완료 (클립 {_clips.Count}개)";
+        }
+
+        private void DeleteBefore_Click(object sender, RoutedEventArgs e)
+        {
+            if (_mp == null || _mp.Length <= 0 || _clips.Count == 0) return;
+            SaveUndoState();
+
+            // 현재 위치 앞의 모든 클립 + 현재 클립의 앞부분 삭제
+            long posMs = _mp.Time;
+            long accMs = 0;
+            var newClips = new System.Collections.Generic.List<VideoClip>();
+
+            for (int i = 0; i < _clips.Count; i++)
+            {
+                long clipMs = (long)_clips[i].Duration.TotalMilliseconds;
+                if (posMs <= accMs)
+                {
+                    // 현재 위치 이후 클립은 그대로 유지
+                    newClips.Add(_clips[i]);
+                }
+                else if (posMs < accMs + clipMs)
+                {
+                    // 현재 위치가 이 클립 내부 → 뒷부분만 남김
+                    var splitAt = _clips[i].StartTime + TimeSpan.FromMilliseconds(posMs - accMs);
+                    newClips.Add(new VideoClip { FilePath = _clips[i].FilePath, StartTime = splitAt, EndTime = _clips[i].EndTime, Order = 0 });
+                }
+                // else: 완전히 앞에 있는 클립은 삭제
+                accMs += clipMs;
+            }
+
+            _clips.Clear();
+            foreach (var c in newClips) _clips.Add(c);
+            AutoMergeAndPlay();
+            StatusText.Text = "앞부분 삭제 완료";
+        }
+
+        private void DeleteAfter_Click(object sender, RoutedEventArgs e)
+        {
+            if (_mp == null || _mp.Length <= 0 || _clips.Count == 0) return;
+            SaveUndoState();
+
+            long posMs = _mp.Time;
+            long accMs = 0;
+            var newClips = new System.Collections.Generic.List<VideoClip>();
+
+            for (int i = 0; i < _clips.Count; i++)
+            {
+                long clipMs = (long)_clips[i].Duration.TotalMilliseconds;
+                if (posMs >= accMs + clipMs)
+                {
+                    // 현재 위치 이전 클립은 그대로 유지
+                    newClips.Add(_clips[i]);
+                }
+                else if (posMs > accMs)
+                {
+                    // 현재 위치가 이 클립 내부 → 앞부분만 남김
+                    var splitAt = _clips[i].StartTime + TimeSpan.FromMilliseconds(posMs - accMs);
+                    newClips.Add(new VideoClip { FilePath = _clips[i].FilePath, StartTime = _clips[i].StartTime, EndTime = splitAt, Order = 0 });
+                }
+                // else: 완전히 뒤에 있는 클립은 삭제
+                accMs += clipMs;
+            }
+
+            _clips.Clear();
+            foreach (var c in newClips) _clips.Add(c);
+            AutoMergeAndPlay();
+            StatusText.Text = "뒷부분 삭제 완료";
+        }
+
+        private void FrameBack_Click(object sender, RoutedEventArgs e)
+        {
+            if (_mp == null || _mp.Length <= 0) return;
+            _mp.Time = Math.Max(0, _mp.Time - 100); // 0.1초 뒤로
+        }
+
+        private void FrameForward_Click(object sender, RoutedEventArgs e)
+        {
+            if (_mp == null || _mp.Length <= 0) return;
+            _mp.Time = Math.Min(_mp.Length, _mp.Time + 100); // 0.1초 앞으로
+        }
+
+        private void ConcatenateClips_Click(object sender, RoutedEventArgs e)
+        { /* 합치기는 AutoMergeAndPlay에서 자동 처리 */ }
+
         private async void TrimVideo_Click(object sender, RoutedEventArgs e)
         {
             if (_mp == null || _mp.Length <= 0 || string.IsNullOrEmpty(_currentFilePath))
             { MessageBox.Show("먼저 영상을 열어주세요."); return; }
+            SaveUndoState();
 
             // 현재 재생 위치에서 클립 분할
             var currentPos = TimeSpan.FromMilliseconds(_mp.Time);
@@ -673,37 +778,6 @@ namespace BowlingVideoEditor.Views
             }
             AutoMergeAndPlay(seekMs);
             StatusText.Text = $"재생 위치에서 분할 완료 (클립 {_clips.Count}개)";
-        }
-
-        private async void ConcatenateClips_Click(object sender, RoutedEventArgs e)
-        {
-            if (_clips.Count < 2) { MessageBox.Show("클립 2개 이상 필요"); return; }
-            StatusText.Text = "합치는 중...";
-            try
-            {
-                var p = new Progress<double>(v => ProgressBar.Value = v);
-                var o = await _videoService.ConcatenateVideosAsync(new System.Collections.Generic.List<VideoClip>(_clips), p);
-                _currentFilePath = o;
-                _mergedFilePath = o;
-                var info = await FFMpegCore.FFProbe.AnalyseAsync(o);
-                var totalDuration = info.Duration;
-
-                // 클립 목록을 합쳐진 단일 클립으로 갱신
-                _clips.Clear();
-                _clips.Add(new VideoClip
-                {
-                    FilePath = o,
-                    StartTime = TimeSpan.Zero,
-                    EndTime = totalDuration,
-                    Order = 0
-                });
-
-                PlayFile(o);
-                UpdateTimeline();
-                StatusText.Text = $"합치기 완료 (총 {totalDuration:hh\\:mm\\:ss})";
-                ProgressBar.Value = 0;
-            }
-            catch (Exception ex) { MessageBox.Show($"오류: {ex.Message}"); StatusText.Text = "오류"; }
         }
 
         // ===== 볼링공 이미지 & 텍스트 =====
@@ -1146,17 +1220,6 @@ namespace BowlingVideoEditor.Views
         private void Window_Closing(object sender, System.ComponentModel.CancelEventArgs e)
         {
             _timer?.Stop(); _mp?.Stop(); _mp?.Dispose(); _libVLC?.Dispose(); _videoService?.CleanupTemp();
-
-            // 종료 시 블로그 링크 열기
-            try
-            {
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = "https://1st-life-2nd.tistory.com/",
-                    UseShellExecute = true
-                });
-            }
-            catch { }
         }
 
         // ===== 타임라인 (동적 트랙) =====

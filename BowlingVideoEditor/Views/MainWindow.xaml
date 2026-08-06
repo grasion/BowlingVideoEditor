@@ -21,7 +21,10 @@
         <StackPanel Grid.Row="0" Orientation="Horizontal" Background="#FF2D2D30" Height="45">
             <Button Content="📂 영상 열기" Click="OpenVideo_Click"/>
             <Button Content="✂️ 구간 자르기" Click="TrimVideo_Click"/>
-            <Button Content="🔗 클립 합치기" Click="ConcatenateClips_Click"/>
+            <Button Content="🗑 앞부분 삭제" Click="DeleteBefore_Click" ToolTip="현재 위치 앞부분 삭제"/>
+            <Button Content="🗑 뒷부분 삭제" Click="DeleteAfter_Click" ToolTip="현재 위치 뒷부분 삭제"/>
+            <Button Content="↩ 실행취소" Click="Undo_Click" ToolTip="Ctrl+Z"/>
+            <Separator Width="10"/>
             <Button Content="🎳 점수판 추가" Click="AddScoreboard_Click"/>
             <Button Content="🎱 볼링공 이미지" Click="AddBallImage_Click"/>
             <Button Content="📝 텍스트 추가" Click="AddText_Click"/>
@@ -234,7 +237,9 @@
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0">
                 <Button Content="⏮" Click="SeekBack_Click" Width="44" Height="34" FontSize="16"/>
+                <Button Content="◀" Click="FrameBack_Click" Width="34" Height="34" FontSize="12" ToolTip="-0.1초"/>
                 <Button x:Name="PlayPauseButton" Content="▶" Click="PlayPause_Click" Width="54" Height="34" FontSize="16"/>
+                <Button Content="▶" Click="FrameForward_Click" Width="34" Height="34" FontSize="12" ToolTip="+0.1초"/>
                 <Button Content="⏭" Click="SeekForward_Click" Width="44" Height="34" FontSize="16"/>
             </StackPanel>
             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0">
